@@ -1,5 +1,4 @@
 // backend/server.js
-// backend/server.js
 import "./src/config/env.js";
 import app from "./src/app.js";
 import { pool } from "./src/db/db.js";
@@ -68,11 +67,11 @@ function startWorkers() {
 // ===============================
 async function startServer() {
   try {
-    // 🔹 DB check (TOLERANT, POOLER-SAFE)
+    // DB check (POOLER SAFE)
     try {
       await pool.query("select 1");
       console.log("PostgreSQL connected successfully");
-    } catch (e) {
+    } catch {
       console.warn("PostgreSQL not ready yet, continuing startup...");
     }
 
@@ -82,7 +81,7 @@ async function startServer() {
       cors: { origin: "*", methods: ["GET", "POST"] }
     });
 
-    // 🔐 Socket authorization
+    // Socket authorization
     io.use((socket, next) => {
       const raw =
         socket.handshake.auth?.token ||
@@ -115,21 +114,16 @@ async function startServer() {
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
 
-      // cron aman dijalankan langsung
       startAutoTicketCron();
 
-      // 🔥 delay workers (penting untuk Supabase pooler)
+      // Delay workers (important for Supabase pooler)
       setTimeout(startWorkers, 5000);
     });
 
   } catch (err) {
-    // ❌ JANGAN EXIT PROCESS DI RAILWAY
+    // ❌ JANGAN exit process di Railway
     console.error("Failed to start server:", err);
   }
-}
-
-startServer();
-
 }
 
 startServer();
