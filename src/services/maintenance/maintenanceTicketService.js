@@ -4,7 +4,7 @@ import { runFailurePrediction } from "../prediction/predictionService.js";
 import { runAnomalyDetection } from "../anomaly/anomalyService.js";
 import { chatToLangChainAgent } from "../agent/langchainAgent.js";
 
-const SYSTEM_USER_ID = 6;
+const SYSTEM_USER_ID = 1;
 
 export async function createAutoTickets() {
     try {
