@@ -15,16 +15,19 @@ import jwt from "jsonwebtoken";
 import jwtConfig from "./src/config/jwt.js";
 
 // ===================================================
-// 🚨 PORT HANDLING (WAJIB UNTUK RAILWAY)
+// 🚨 PORT HANDLING (FINAL & BENAR UNTUK RAILWAY)
 // ===================================================
-const PORT = process.env.PORT || 5000;
-const HOST = "0.0.0.0"; // WAJIB di container
+const PORT = process.env.PORT;
+const HOST = "0.0.0.0";
+
+if (!PORT) {
+  throw new Error("PORT is not set by Railway");
+}
 
 // ===================================================
 // 🔁 WORKERS (DELAYED START)
 // ===================================================
 function startWorkers() {
-  // Sensor auto generator
   const SENSOR_INTERVAL = Number(process.env.SENSOR_INTERVAL_MS) || 10000;
   setInterval(async () => {
     try {
@@ -35,31 +38,25 @@ function startWorkers() {
     }
   }, SENSOR_INTERVAL);
 
-  // Auto prediction worker
   const PREDICT_INTERVAL = Number(process.env.PREDICT_INTERVAL_MS) || 10000;
   console.log(`Prediction worker active every ${PREDICT_INTERVAL} ms`);
 
   setInterval(async () => {
     try {
       const count = await autoPredictAllMachines();
-      if (count > 0) {
-        console.log(`[PREDICT] Processed ${count} machines`);
-      }
+      if (count > 0) console.log(`[PREDICT] Processed ${count} machines`);
     } catch (err) {
       console.error("[AUTO-PREDICT ERROR]", err);
     }
   }, PREDICT_INTERVAL);
 
-  // Auto anomaly monitor worker
   const ANOMALY_INTERVAL = Number(process.env.ANOMALY_INTERVAL_MS) || 10000;
   console.log(`Anomaly monitor active every ${ANOMALY_INTERVAL} ms`);
 
   setInterval(async () => {
     try {
       const detected = await autoAnomalyMonitor();
-      if (detected > 0) {
-        console.log(`[ANOMALY] Scanned ${detected} machines`);
-      }
+      if (detected > 0) console.log(`[ANOMALY] Scanned ${detected} machines`);
     } catch (err) {
       console.error("[AUTO-ANOMALY ERROR]", err);
     }
@@ -71,7 +68,6 @@ function startWorkers() {
 // ===================================================
 async function startServer() {
   try {
-    // 🔹 DB check (AMAN UNTUK SUPABASE POOLER)
     try {
       await pool.query("select 1");
       console.log("PostgreSQL connected successfully");
@@ -82,60 +78,40 @@ async function startServer() {
     const server = http.createServer(app);
 
     const io = new IOServer(server, {
-      cors: {
-        origin: "*",
-        methods: ["GET", "POST"],
-      },
+      cors: { origin: "*", methods: ["GET", "POST"] },
     });
 
-    // 🔐 Socket authorization (JWT)
     io.use((socket, next) => {
       const raw =
         socket.handshake.auth?.token ||
-        socket.handshake.headers?.authorization ||
-        null;
+        socket.handshake.headers?.authorization;
 
       if (!raw) return next(new Error("NO_TOKEN_PROVIDED"));
 
-      const token = raw.replace("Bearer ", "");
-
       try {
-        const decoded = jwt.verify(token, jwtConfig.accessSecret);
-        socket.user = decoded;
-        return next();
+        socket.user = jwt.verify(raw.replace("Bearer ", ""), jwtConfig.accessSecret);
+        next();
       } catch {
-        return next(new Error("INVALID_TOKEN"));
+        next(new Error("INVALID_TOKEN"));
       }
     });
 
     io.on("connection", (socket) => {
-      console.log(
-        `Socket connected: ${socket.id} (user=${socket.user?.email})`
+      console.log(`Socket connected: ${socket.id}`);
+      socket.on("disconnect", () =>
+        console.log(`Socket disconnected: ${socket.id}`)
       );
-
-      socket.on("disconnect", () => {
-        console.log(`Socket disconnected: ${socket.id}`);
-      });
     });
 
-    // 🌍 expose socket globally
     globalThis._io = io;
 
-    // ===================================================
-    // 🔥 LISTEN (INI KUNCI BIAR RAILWAY TIDAK STOP)
-    // ===================================================
     server.listen(PORT, HOST, () => {
-      console.log(`🚀 Server listening on ${HOST}:${PORT}`);
-
-      // cron aman dijalankan langsung
+      console.log(`🚀 Server listening on ${PORT}`);
       startAutoTicketCron();
-
-      // workers ditunda (penting untuk Supabase pooler)
       setTimeout(startWorkers, 5000);
     });
 
   } catch (err) {
-    // ❌ JANGAN process.exit DI RAILWAY
     console.error("Failed to start server:", err);
   }
 }
