@@ -25,10 +25,10 @@ class RegisterController {
       const username = generateUsername(full_name);
 
       const result = await pool.query(
-        `INSERT INTO users(full_name, username, email, password)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, full_name, username, email, created_at`,
-        [full_name, username, email, hash]
+        `INSERT INTO users(full_name, username, email, password, role)
+   VALUES ($1, $2, $3, $4, $5)
+   RETURNING id, full_name, username, email, role, created_at`,
+  [full_name, username, email, hash, "TECHNICIAN"]
       );
 
       return res.status(201).json({
