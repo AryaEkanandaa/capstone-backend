@@ -18,12 +18,12 @@ app.use(
   })
 );
 
-app.options("/*", cors());
-
 app.use(express.json());
 
+// ⬅️ ROUTES
 app.use("/api", router);
 
+// ⬅️ ERROR HANDLERS
 app.use(notFound);
 app.use(errorHandler);
 
