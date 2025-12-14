@@ -14,11 +14,15 @@ import { Server as IOServer } from "socket.io";
 import jwt from "jsonwebtoken";
 import jwtConfig from "./src/config/jwt.js";
 
+// ===================================================
+// 🚨 PORT HANDLING (WAJIB UNTUK RAILWAY)
+// ===================================================
 const PORT = process.env.PORT || 5000;
+const HOST = "0.0.0.0"; // WAJIB di container
 
-// ===============================
-// Worker starter (DELAYED)
-// ===============================
+// ===================================================
+// 🔁 WORKERS (DELAYED START)
+// ===================================================
 function startWorkers() {
   // Sensor auto generator
   const SENSOR_INTERVAL = Number(process.env.SENSOR_INTERVAL_MS) || 10000;
@@ -62,12 +66,12 @@ function startWorkers() {
   }, ANOMALY_INTERVAL);
 }
 
-// ===============================
-// Server bootstrap
-// ===============================
+// ===================================================
+// 🚀 SERVER BOOTSTRAP
+// ===================================================
 async function startServer() {
   try {
-    // DB check (POOLER SAFE)
+    // 🔹 DB check (AMAN UNTUK SUPABASE POOLER)
     try {
       await pool.query("select 1");
       console.log("PostgreSQL connected successfully");
@@ -78,10 +82,13 @@ async function startServer() {
     const server = http.createServer(app);
 
     const io = new IOServer(server, {
-      cors: { origin: "*", methods: ["GET", "POST"] }
+      cors: {
+        origin: "*",
+        methods: ["GET", "POST"],
+      },
     });
 
-    // Socket authorization
+    // 🔐 Socket authorization (JWT)
     io.use((socket, next) => {
       const raw =
         socket.handshake.auth?.token ||
@@ -102,26 +109,33 @@ async function startServer() {
     });
 
     io.on("connection", (socket) => {
-      console.log(`Socket connected: ${socket.id} (user=${socket.user?.email})`);
+      console.log(
+        `Socket connected: ${socket.id} (user=${socket.user?.email})`
+      );
+
       socket.on("disconnect", () => {
         console.log(`Socket disconnected: ${socket.id}`);
       });
     });
 
-    // Expose socket globally
+    // 🌍 expose socket globally
     globalThis._io = io;
 
-    server.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+    // ===================================================
+    // 🔥 LISTEN (INI KUNCI BIAR RAILWAY TIDAK STOP)
+    // ===================================================
+    server.listen(PORT, HOST, () => {
+      console.log(`🚀 Server listening on ${HOST}:${PORT}`);
 
+      // cron aman dijalankan langsung
       startAutoTicketCron();
 
-      // Delay workers (important for Supabase pooler)
+      // workers ditunda (penting untuk Supabase pooler)
       setTimeout(startWorkers, 5000);
     });
 
   } catch (err) {
-    // ❌ JANGAN exit process di Railway
+    // ❌ JANGAN process.exit DI RAILWAY
     console.error("Failed to start server:", err);
   }
 }
