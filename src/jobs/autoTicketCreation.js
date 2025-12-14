@@ -3,7 +3,7 @@ import { createAutoTickets } from "../services/maintenance/maintenanceTicketServ
 
 export function startAutoTicketCron() {
   // 1 jam dulu, limit API KEY AI
-  cron.schedule("*/10 * * * * *", async () => {
+  cron.schedule("* * * * * *", async () => {
     console.log("[CRON] Running auto ticket creation...");
 
     try {
