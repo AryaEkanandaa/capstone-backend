@@ -1,4 +1,5 @@
 // backend/server.js
+// backend/server.js
 import "./src/config/env.js";
 import app from "./src/app.js";
 import { pool } from "./src/db/db.js";
@@ -8,7 +9,6 @@ import { autoPredictAllMachines } from "./src/services/prediction/autoPrediction
 import { autoAnomalyMonitor } from "./src/services/anomaly/anomalyService.js";
 import { startAutoTicketCron } from "./src/jobs/autoTicketCreation.js";
 
-
 import http from "http";
 import { Server as IOServer } from "socket.io";
 
@@ -17,11 +17,64 @@ import jwtConfig from "./src/config/jwt.js";
 
 const PORT = process.env.PORT || 5000;
 
+// ===============================
+// Worker starter (DELAYED)
+// ===============================
+function startWorkers() {
+  // Sensor auto generator
+  const SENSOR_INTERVAL = Number(process.env.SENSOR_INTERVAL_MS) || 10000;
+  setInterval(async () => {
+    try {
+      const inserted = await sensorService.autoGenerateAllMachines();
+      console.log(`[SENSOR] Inserted ${inserted.length} logs`);
+    } catch (err) {
+      console.error("[SENSOR ERROR]", err);
+    }
+  }, SENSOR_INTERVAL);
 
+  // Auto prediction worker
+  const PREDICT_INTERVAL = Number(process.env.PREDICT_INTERVAL_MS) || 10000;
+  console.log(`Prediction worker active every ${PREDICT_INTERVAL} ms`);
+
+  setInterval(async () => {
+    try {
+      const count = await autoPredictAllMachines();
+      if (count > 0) {
+        console.log(`[PREDICT] Processed ${count} machines`);
+      }
+    } catch (err) {
+      console.error("[AUTO-PREDICT ERROR]", err);
+    }
+  }, PREDICT_INTERVAL);
+
+  // Auto anomaly monitor worker
+  const ANOMALY_INTERVAL = Number(process.env.ANOMALY_INTERVAL_MS) || 10000;
+  console.log(`Anomaly monitor active every ${ANOMALY_INTERVAL} ms`);
+
+  setInterval(async () => {
+    try {
+      const detected = await autoAnomalyMonitor();
+      if (detected > 0) {
+        console.log(`[ANOMALY] Scanned ${detected} machines`);
+      }
+    } catch (err) {
+      console.error("[AUTO-ANOMALY ERROR]", err);
+    }
+  }, ANOMALY_INTERVAL);
+}
+
+// ===============================
+// Server bootstrap
+// ===============================
 async function startServer() {
   try {
-    await pool.query("SELECT NOW()");
-    console.log("PostgreSQL connected successfully");
+    // 🔹 DB check (TOLERANT, POOLER-SAFE)
+    try {
+      await pool.query("select 1");
+      console.log("PostgreSQL connected successfully");
+    } catch (e) {
+      console.warn("PostgreSQL not ready yet, continuing startup...");
+    }
 
     const server = http.createServer(app);
 
@@ -29,7 +82,7 @@ async function startServer() {
       cors: { origin: "*", methods: ["GET", "POST"] }
     });
 
-    // Authorization for socket
+    // 🔐 Socket authorization
     io.use((socket, next) => {
       const raw =
         socket.handshake.auth?.token ||
@@ -44,72 +97,39 @@ async function startServer() {
         const decoded = jwt.verify(token, jwtConfig.accessSecret);
         socket.user = decoded;
         return next();
-      } catch (err) {
+      } catch {
         return next(new Error("INVALID_TOKEN"));
       }
     });
 
     io.on("connection", (socket) => {
       console.log(`Socket connected: ${socket.id} (user=${socket.user?.email})`);
-
       socket.on("disconnect", () => {
         console.log(`Socket disconnected: ${socket.id}`);
       });
     });
 
-    // Expose IO globally
+    // Expose socket globally
     globalThis._io = io;
 
     server.listen(PORT, () => {
-      console.log(`Server running at http://localhost:${PORT}`);
+      console.log(`🚀 Server running on port ${PORT}`);
+
+      // cron aman dijalankan langsung
       startAutoTicketCron();
+
+      // 🔥 delay workers (penting untuk Supabase pooler)
+      setTimeout(startWorkers, 5000);
     });
 
-    // Sensor auto generator
-    const SENSOR_INTERVAL = Number(process.env.SENSOR_INTERVAL_MS) || 10000;
-    setInterval(async () => {
-      try {
-        const inserted = await sensorService.autoGenerateAllMachines();
-        console.log(`[SENSOR] Inserted ${inserted.length} logs`);
-      } catch (err) {
-        console.error("[SENSOR ERROR]", err);
-      }
-    }, SENSOR_INTERVAL);
-
-    // Auto prediction worker
-    const PREDICT_INTERVAL = Number(process.env.PREDICT_INTERVAL_MS) || 10000;
-    console.log(`Prediction worker active every ${PREDICT_INTERVAL} ms`);
-
-    setInterval(async () => {
-      try {
-        const count = await autoPredictAllMachines();
-        if (count > 0) {
-          console.log(`[PREDICT] Processed ${count} machines`);
-        }
-      } catch (err) {
-        console.error("[AUTO-PREDICT ERROR]", err);
-      }
-    }, PREDICT_INTERVAL);
-
-    // Auto anomaly monitor worker
-    const ANOMALY_INTERVAL = Number(process.env.ANOMALY_INTERVAL_MS) || 10000;
-    console.log(`Anomaly monitor active every ${ANOMALY_INTERVAL} ms`);
-
-    setInterval(async () => {
-      try {
-        const detected = await autoAnomalyMonitor();
-        if (detected > 0) {
-          console.log(`[ANOMALY] Scanned ${detected} machines`);
-        }
-      } catch (err) {
-        console.error("[AUTO-ANOMALY ERROR]", err);
-      }
-    }, ANOMALY_INTERVAL);
-
   } catch (err) {
+    // ❌ JANGAN EXIT PROCESS DI RAILWAY
     console.error("Failed to start server:", err);
-    process.exit(1);
   }
+}
+
+startServer();
+
 }
 
 startServer();
